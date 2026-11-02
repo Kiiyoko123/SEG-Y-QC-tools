@@ -148,3 +148,7 @@ MIT (see `LICENSE`).
 
 - SEG Technical Standards Committee, *SEG-Y rev 1 Data Exchange Format* (2002).
 - Equinor, `segyio`: https://github.com/equinor/segyio
+
+## Author
+
+Mirza Amanda Azzahra, Master's student, Geophysical Engineering, ITS. Contact: mirzaamanda1102@gmail.com
