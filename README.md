@@ -30,7 +30,7 @@ Every check has an ID, a severity (`INFO` / `WARN` / `FAIL`), and configurable t
 | H-01 | Textual (EBCDIC) header decodable | ✅ |
 | H-02 | Binary header: valid format code, sample interval > 0, samples/trace > 0 | ✅ |
 | H-03 | Binary header sample interval/count agrees with trace headers | ✅ |
-| H-04 | Constant sample count across all traces | ✅ |
+| H-04 | Constant sample count across all traces (header and physical size) | ✅ |
 | G-01 | Inline/crossline grid completeness (gaps, missing lines) | 🔲 |
 | G-02 | Duplicate (inline, crossline) positions | 🔲 |
 | G-03 | Coordinate scalar valid and consistent | 🔲 |
@@ -126,6 +126,7 @@ Datasets are **not** committed or redistributed. They are fetched with a downloa
 - Heuristic checks (T-04, T-05) flag anomalies; they cannot determine whether an anomaly is geological or an acquisition/processing artifact.
 - No polarity or phase determination.
 - Results on files with severely corrupted binary headers may be unreliable.
+- H-04 first checks total file size against the binary header; a file whose trace-length deviations exactly cancel out can pass this first test.
 
 ## Roadmap
 
