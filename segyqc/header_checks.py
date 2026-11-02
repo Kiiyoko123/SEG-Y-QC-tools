@@ -522,3 +522,47 @@ def check_t01(path, dead_rms=T01_DEAD_RMS):
             f"{n_const} trace(s) are constant non-zero out of {n} "
             f"({100 * n_const / n:.2f}%). First indices: {first_const}."))
     return findings
+
+def _scan_nonfinite(path):
+    """Baca trace per potongan. Return (n_trace, n_nan, n_inf, n_trace_terdampak,
+    indeks trace terdampak pertama)."""
+    n_nan = n_inf = n_bad_traces = 0
+    first_bad = []
+    with segyio.open(path, "r", ignore_geometry=True) as f:
+        n = f.tracecount
+        ns = len(f.samples)
+        if n == 0 or ns <= 0:
+            return n, 0, 0, 0, []
+        step = max(1, T01_CHUNK_BYTES // (ns * 8))
+        for start in range(0, n, step):
+            stop = min(start + step, n)
+            block = np.asarray(f.trace.raw[start:stop], dtype=np.float64)
+            nan_mask = np.isnan(block)
+            inf_mask = np.isinf(block)
+            bad_rows = (nan_mask | inf_mask).any(axis=1)
+            n_nan += int(nan_mask.sum())
+            n_inf += int(inf_mask.sum())
+            n_bad_traces += int(bad_rows.sum())
+            if len(first_bad) < 5:
+                first_bad += (start + np.flatnonzero(bad_rows)).tolist()[:5]
+    return n, n_nan, n_inf, n_bad_traces, first_bad[:5]
+
+
+def check_t02(path):
+    """T-02: sampel NaN / Inf."""
+    try:
+        n, n_nan, n_inf, n_bad, first_bad = _scan_nonfinite(path)
+    except Exception as exc:
+        return [Finding("T-02", Severity.FAIL,
+                        f"segyio could not read trace data: {exc}")]
+    if n == 0:
+        return [Finding("T-02", Severity.FAIL, "File contains no traces.")]
+
+    if n_nan == 0 and n_inf == 0:
+        return [Finding("T-02", Severity.INFO,
+                        f"No NaN or Inf samples among {n} traces.")]
+
+    return [Finding(
+        "T-02", Severity.FAIL,
+        f"{n_nan} NaN and {n_inf} Inf sample(s) found in {n_bad} of {n} trace(s) "
+        f"({100 * n_bad / n:.2f}%). First affected trace indices: {first_bad}.")]
