@@ -1,3 +1,4 @@
+import os
 import struct
 
 import numpy as np
@@ -121,16 +122,110 @@ def check_h03(path):
                                 "Binary and trace headers agree on samples and interval."))
     return findings
 
-def check_h04(path):
-    """H-04: sample count konstan di semua trace."""
-    hdr, arrays, err = _load(path)
-    if err:
-        return [Finding("H-04", Severity.FAIL, err)]
+BYTES_PER_SAMPLE = {1: 4, 2: 4, 3: 2, 5: 4, 8: 1}
+TRACE_HEADER_SIZE = 240
+EXT_HEADER_COUNT_OFFSET = 3504  # jumlah extended textual header (byte 3505-3506)
 
-    values, counts = np.unique(arrays["samples"], return_counts=True)
-    if len(values) > 1:
-        detail = ", ".join(f"{int(v)}: {int(c)} traces" for v, c in zip(values, counts))
+
+def _read_ext_header_count(path):
+    with open(path, "rb") as f:
+        f.seek(EXT_HEADER_COUNT_OFFSET)
+        raw = f.read(2)
+    if len(raw) < 2:
+        return 0
+    return struct.unpack(">h", raw)[0]
+
+
+def _walk_traces(path, data_start, bytes_per_sample, expected_ns):
+    """Telusuri trace demi trace: baca sample count di tiap header, lalu lompat.
+
+    Data amplitudo tidak dimuat. Panjang tiap trace dihitung dari header-nya sendiri.
+    """
+    size = os.path.getsize(path)
+    counts = {}
+    first_bad = None
+    invalid = None
+    n = 0
+    pos = data_start
+    with open(path, "rb") as f:
+        while pos + TRACE_HEADER_SIZE <= size:
+            f.seek(pos + 114)
+            ns = struct.unpack(">h", f.read(2))[0]
+            counts[ns] = counts.get(ns, 0) + 1
+            if ns != expected_ns and first_bad is None:
+                first_bad = n
+            if ns <= 0:
+                invalid = (n, ns)
+                break
+            pos += TRACE_HEADER_SIZE + ns * bytes_per_sample
+            n += 1
+    truncated = invalid is None and pos > size
+    trailing = (size - pos) if (invalid is None and pos <= size) else 0
+    return {"counts": counts, "first_bad": first_bad, "invalid": invalid,
+            "truncated": truncated, "trailing": trailing}
+
+
+def check_h04(path):
+    """H-04: sample count konstan di semua trace (ukuran fisik di disk + header)."""
+    hdr = read_binary_header(path)
+    if hdr is None:
+        return [Finding("H-04", Severity.FAIL, "File too short for a binary header.")]
+
+    bps = BYTES_PER_SAMPLE.get(hdr["format"])
+    if bps is None:
         return [Finding("H-04", Severity.FAIL,
-                        f"Sample count is not constant ({detail}).")]
-    return [Finding("H-04", Severity.INFO,
-                    f"Sample count is constant ({int(values[0])}) across all traces.")]
+                        f"Cannot determine sample size: invalid format code {hdr['format']}.")]
+    if hdr["samples"] <= 0:
+        return [Finding("H-04", Severity.FAIL,
+                        f"Cannot check trace sizes: binary header samples = {hdr['samples']}.")]
+
+    ext = _read_ext_header_count(path)
+    if ext < 0:
+        return [Finding("H-04", Severity.WARN,
+                        "Variable number of extended text headers is not supported; H-04 skipped.")]
+
+    data_start = 3600 + ext * 3200
+    remaining = os.path.getsize(path) - data_start
+    trace_size = TRACE_HEADER_SIZE + hdr["samples"] * bps
+    if remaining < TRACE_HEADER_SIZE:
+        return [Finding("H-04", Severity.FAIL, "File contains no complete trace.")]
+
+    # Lapis 1: ukuran file harus habis dibagi ukuran satu trace.
+    if remaining % trace_size == 0:
+        _, arrays, err = _load(path)
+        if err:
+            return [Finding("H-04", Severity.FAIL, err)]
+        values, counts = np.unique(arrays["samples"], return_counts=True)
+        if len(values) > 1:
+            detail = ", ".join(f"{int(v)}: {int(c)} traces" for v, c in zip(values, counts))
+            return [Finding("H-04", Severity.FAIL,
+                            f"Sample count is not constant in trace headers ({detail}).")]
+        return [Finding("H-04", Severity.INFO,
+                        f"Sample count is constant ({int(values[0])}) across all traces.")]
+
+    # Lapis 2: ukuran tidak cocok, telusuri untuk mencari penyebabnya.
+    findings = [Finding(
+        "H-04", Severity.FAIL,
+        f"File size does not match {hdr['samples']} samples/trace: {remaining} data bytes "
+        f"is not a multiple of the trace size ({trace_size} bytes).")]
+    walk = _walk_traces(path, data_start, bps, hdr["samples"])
+
+    if walk["first_bad"] is not None:
+        detail = ", ".join(f"{k}: {v} traces" for k, v in sorted(walk["counts"].items()))
+        findings.append(Finding(
+            "H-04", Severity.FAIL,
+            f"Traces have different sample counts ({detail}). "
+            f"First trace with a different sample count: index {walk['first_bad']}."))
+    if walk["invalid"] is not None:
+        idx, ns = walk["invalid"]
+        findings.append(Finding(
+            "H-04", Severity.FAIL,
+            f"Trace index {idx} declares {ns} samples; scanning stopped there."))
+    if walk["truncated"]:
+        findings.append(Finding(
+            "H-04", Severity.FAIL, "Last trace is truncated: file ends before the trace is complete."))
+    if walk["trailing"]:
+        findings.append(Finding(
+            "H-04", Severity.FAIL,
+            f"{walk['trailing']} trailing byte(s) after the last complete trace."))
+    return findings
