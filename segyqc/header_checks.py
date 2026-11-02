@@ -331,3 +331,50 @@ def check_g02(path):
     return [Finding("G-02", Severity.FAIL,
                     f"{n_pos} position(s) have more than one trace ({extra} extra "
                     f"trace(s) in total). Examples: {examples}.")]
+
+VALID_SCALARS = {1, 10, 100, 1000, 10000, -1, -10, -100, -1000, -10000}
+
+
+def read_scalar_array(path):
+    """Baca coordinate scalar (byte 71) dari semua trace header."""
+    with segyio.open(path, "r", ignore_geometry=True) as f:
+        return np.asarray(f.attributes(TraceField.SourceGroupScalar)[:], dtype=np.int64)
+
+
+def check_g03(path):
+    """G-03: coordinate scalar valid dan konsisten."""
+    try:
+        scalars = read_scalar_array(path)
+    except Exception as exc:
+        return [Finding("G-03", Severity.FAIL,
+                        f"segyio could not read trace headers: {exc}")]
+    if len(scalars) == 0:
+        return [Finding("G-03", Severity.FAIL, "File contains no traces.")]
+
+    values, counts = np.unique(scalars, return_counts=True)
+    findings = []
+
+    if len(values) > 1:
+        detail = ", ".join(f"{int(v)}: {int(c)} traces" for v, c in zip(values, counts))
+        findings.append(Finding("G-03", Severity.FAIL,
+                                f"Coordinate scalar is not constant ({detail})."))
+
+    invalid = [int(v) for v in values if v != 0 and int(v) not in VALID_SCALARS]
+    if invalid:
+        findings.append(Finding(
+            "G-03", Severity.FAIL,
+            f"Invalid coordinate scalar value(s): {invalid}. Valid: 0, +/-1, 10, 100, "
+            f"1000, 10000."))
+
+    if 0 in values:
+        n0 = int(counts[list(values).index(0)])
+        findings.append(Finding(
+            "G-03", Severity.WARN,
+            f"{n0} trace(s) have scalar 0, which is undefined in the standard "
+            f"(often treated as 1)."))
+
+    if not findings:
+        findings.append(Finding(
+            "G-03", Severity.INFO,
+            f"Coordinate scalar is valid and constant ({int(values[0])}) across all traces."))
+    return findings

@@ -33,7 +33,7 @@ Every check has an ID, a severity (`INFO` / `WARN` / `FAIL`), and configurable t
 | H-04 | Constant sample count across all traces (header and physical size) | ✅ |
 | G-01 | Inline/crossline grid completeness (gaps, missing lines) | ✅ |
 | G-02 | Duplicate (inline, crossline) positions | ✅ |
-| G-03 | Coordinate scalar valid and consistent | 🔲 |
+| G-03 | Coordinate scalar valid and consistent | ✅ |
 | G-04 | Header X/Y consistent with inline/crossline (affine fit residual) | 🔲 |
 | T-01 | Dead / constant traces | 🔲 |
 | T-02 | NaN / Inf samples | 🔲 |
