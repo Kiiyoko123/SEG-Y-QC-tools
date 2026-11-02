@@ -27,8 +27,8 @@ Every check has an ID, a severity (`INFO` / `WARN` / `FAIL`), and configurable t
 
 | ID | Check | Status |
 |---|---|---|
-| H-01 | Textual (EBCDIC) header decodable | 🔲 |
-| H-02 | Binary header: valid format code, sample interval > 0, samples/trace > 0 | 🔲 |
+| H-01 | Textual (EBCDIC) header decodable | ✅ |
+| H-02 | Binary header: valid format code, sample interval > 0, samples/trace > 0 | ✅ |
 | H-03 | Binary header sample interval/count agrees with trace headers | 🔲 |
 | H-04 | Constant sample count across all traces | 🔲 |
 | G-01 | Inline/crossline grid completeness (gaps, missing lines) | 🔲 |
@@ -44,9 +44,9 @@ Every check has an ID, a severity (`INFO` / `WARN` / `FAIL`), and configurable t
 ## Installation
 
 ```bash
-  git clone https://github.com/Kiiyoko123/SEG-Y-QC-tools.git
-  cd SEG-Y-QC-tools
-  pip install -e .
+git clone https://github.com/Kiiyoko123/SEG-Y-QC-tools.git
+cd SEG-Y-QC-tools
+pip install -e .
 ```
 
 Requires Python ≥ 3.9. Core dependencies: `numpy`, `segyio`, `matplotlib`, `pyyaml`.
