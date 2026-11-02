@@ -30,7 +30,7 @@ Every check has an ID, a severity (`INFO` / `WARN` / `FAIL`), and configurable t
 | H-01 | Textual (EBCDIC) header decodable | ✅ |
 | H-02 | Binary header: valid format code, sample interval > 0, samples/trace > 0 | ✅ |
 | H-03 | Binary header sample interval/count agrees with trace headers | ✅ |
-| H-04 | Constant sample count across all traces | 🔲 |
+| H-04 | Constant sample count across all traces | ✅ |
 | G-01 | Inline/crossline grid completeness (gaps, missing lines) | 🔲 |
 | G-02 | Duplicate (inline, crossline) positions | 🔲 |
 | G-03 | Coordinate scalar valid and consistent | 🔲 |

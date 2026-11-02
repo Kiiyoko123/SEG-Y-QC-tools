@@ -120,3 +120,17 @@ def check_h03(path):
         findings.append(Finding("H-03", Severity.INFO,
                                 "Binary and trace headers agree on samples and interval."))
     return findings
+
+def check_h04(path):
+    """H-04: sample count konstan di semua trace."""
+    hdr, arrays, err = _load(path)
+    if err:
+        return [Finding("H-04", Severity.FAIL, err)]
+
+    values, counts = np.unique(arrays["samples"], return_counts=True)
+    if len(values) > 1:
+        detail = ", ".join(f"{int(v)}: {int(c)} traces" for v, c in zip(values, counts))
+        return [Finding("H-04", Severity.FAIL,
+                        f"Sample count is not constant ({detail}).")]
+    return [Finding("H-04", Severity.INFO,
+                    f"Sample count is constant ({int(values[0])}) across all traces.")]
