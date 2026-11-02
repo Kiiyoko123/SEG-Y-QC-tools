@@ -378,3 +378,85 @@ def check_g03(path):
             "G-03", Severity.INFO,
             f"Coordinate scalar is valid and constant ({int(values[0])}) across all traces."))
     return findings
+
+G04_WARN_FRACTION = 0.1   # simpangan > 10% ukuran sel -> WARN
+G04_FAIL_FRACTION = 0.5   # simpangan > 50% ukuran sel -> FAIL
+
+
+def read_coordinate_arrays(path):
+    """Baca CDP_X (byte 181), CDP_Y (byte 185), dan scalar (byte 71)."""
+    with segyio.open(path, "r", ignore_geometry=True) as f:
+        return (
+            np.asarray(f.attributes(TraceField.CDP_X)[:], dtype=np.float64),
+            np.asarray(f.attributes(TraceField.CDP_Y)[:], dtype=np.float64),
+            np.asarray(f.attributes(TraceField.SourceGroupScalar)[:], dtype=np.float64),
+        )
+
+
+def _apply_scalar(values, scalars):
+    """Scalar > 0 mengalikan, < 0 membagi, 0 dianggap 1."""
+    denom = np.where(scalars < 0, -scalars, 1.0)
+    factor = np.where(scalars > 0, scalars, 1.0 / denom)
+    return values * factor
+
+
+def check_g04(path):
+    """G-04: X/Y header konsisten dengan inline/crossline (residual affine fit)."""
+    try:
+        il, xl = read_line_arrays(path)
+        x, y, scalars = read_coordinate_arrays(path)
+    except Exception as exc:
+        return [Finding("G-04", Severity.FAIL,
+                        f"segyio could not read trace headers: {exc}")]
+    if len(il) == 0:
+        return [Finding("G-04", Severity.FAIL, "File contains no traces.")]
+
+    if np.all(il == 0) or np.all(xl == 0):
+        return [Finding("G-04", Severity.FAIL,
+                        "Inline or crossline is 0 in every trace; the fit is meaningless "
+                        "(unset values or wrong byte location).")]
+    if np.all(x == 0) and np.all(y == 0):
+        return [Finding("G-04", Severity.FAIL,
+                        "X and Y are 0 in every trace; coordinates are unset or stored "
+                        "at different byte locations.")]
+
+    x = _apply_scalar(x, scalars)
+    y = _apply_scalar(y, scalars)
+
+    il_c = il.astype(np.float64) - il.mean()
+    xl_c = xl.astype(np.float64) - xl.mean()
+    design = np.column_stack((il_c, xl_c, np.ones(len(il))))
+
+    if np.linalg.matrix_rank(design) < 3:
+        return [Finding("G-04", Severity.WARN,
+                        "Not enough geometry for an affine fit (need at least two "
+                        "inlines and two crosslines that are not collinear).")]
+
+    coef_x = np.linalg.lstsq(design, x, rcond=None)[0]
+    coef_y = np.linalg.lstsq(design, y, rcond=None)[0]
+    resid = np.hypot(x - design @ coef_x, y - design @ coef_y)
+    idx = int(np.argmax(resid))
+    max_res = float(resid[idx])
+
+    step_il = _line_gaps(il)[1]
+    step_xl = _line_gaps(xl)[1]
+    spacing_il = float(np.hypot(coef_x[0], coef_y[0])) * step_il
+    spacing_xl = float(np.hypot(coef_x[1], coef_y[1])) * step_xl
+    cell = min(spacing_il, spacing_xl)
+    scale = max(float(np.abs(x).max()), float(np.abs(y).max()), 1.0)
+    if cell <= 1e-9 * scale:
+        return [Finding("G-04", Severity.FAIL,
+                        "X/Y do not change with inline/crossline; coordinates are "
+                        "constant or inconsistent with the line numbers.")]
+
+    ratio = max_res / cell
+    detail = (f"max residual {max_res:.2f} coordinate units ({ratio:.0%} of the "
+              f"{cell:.2f} cell size) at trace index {idx}")
+    if ratio >= G04_FAIL_FRACTION:
+        return [Finding("G-04", Severity.FAIL,
+                        f"Header X/Y inconsistent with inline/crossline: {detail}.")]
+    if ratio >= G04_WARN_FRACTION:
+        return [Finding("G-04", Severity.WARN,
+                        f"Header X/Y deviate from the inline/crossline fit: {detail}.")]
+    return [Finding("G-04", Severity.INFO,
+                    f"Header X/Y consistent with inline/crossline: {detail}.")]
