@@ -127,6 +127,7 @@ Datasets are **not** committed or redistributed. They are fetched with a downloa
 - No polarity or phase determination.
 - Results on files with severely corrupted binary headers may be unreliable.
 - H-04 first checks total file size against the binary header; a file whose trace-length deviations exactly cancel out can pass this first test.
+- G-01 reads inline/crossline from fixed byte locations (189/193); configurable locations are planned. Missing grid positions are reported as WARN because survey outlines can be non-rectangular.
 
 ## Roadmap
 

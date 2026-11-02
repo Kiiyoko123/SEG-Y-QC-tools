@@ -229,3 +229,75 @@ def check_h04(path):
             "H-04", Severity.FAIL,
             f"{walk['trailing']} trailing byte(s) after the last complete trace."))
     return findings
+
+def read_line_arrays(path):
+    """Baca inline (byte 189) dan crossline (byte 193) dari semua trace header."""
+    with segyio.open(path, "r", ignore_geometry=True) as f:
+        return (
+            np.asarray(f.attributes(TraceField.INLINE_3D)[:], dtype=np.int64),
+            np.asarray(f.attributes(TraceField.CROSSLINE_3D)[:], dtype=np.int64),
+        )
+
+
+def _line_gaps(values):
+    """Return (nilai unik, step, nilai yang hilang, spasi tidak teratur?)."""
+    u = np.unique(values)
+    if len(u) < 2:
+        return u, 1, np.array([], dtype=np.int64), False
+    d = np.diff(u)
+    vals, cnts = np.unique(d, return_counts=True)
+    step = int(vals[np.argmax(cnts)])
+    irregular = bool(np.any(d % step != 0))
+    expected = np.arange(u[0], u[-1] + 1, step)
+    return u, step, np.setdiff1d(expected, u), irregular
+
+
+def check_g01(path):
+    """G-01: kelengkapan grid inline/crossline (gap, line hilang)."""
+    try:
+        il, xl = read_line_arrays(path)
+    except Exception as exc:
+        return [Finding("G-01", Severity.FAIL,
+                        f"segyio could not read trace headers: {exc}")]
+    if len(il) == 0:
+        return [Finding("G-01", Severity.FAIL, "File contains no traces.")]
+
+    if np.all(il == 0) or np.all(xl == 0):
+        return [Finding("G-01", Severity.FAIL,
+                        "Inline or crossline is 0 in every trace; the values are unset "
+                        "or stored at different byte locations.")]
+
+    findings = []
+    u_il, step_il, miss_il, irr_il = _line_gaps(il)
+    u_xl, step_xl, miss_xl, irr_xl = _line_gaps(xl)
+
+    for name, miss, step, u, irr in (
+        ("Inline", miss_il, step_il, u_il, irr_il),
+        ("Crossline", miss_xl, step_xl, u_xl, irr_xl),
+    ):
+        if len(miss):
+            findings.append(Finding(
+                "G-01", Severity.FAIL,
+                f"{len(miss)} {name.lower()}(s) missing between {int(u[0])} and "
+                f"{int(u[-1])} (step {step}). {name}s missing: {miss[:10].tolist()}."))
+        if irr:
+            findings.append(Finding(
+                "G-01", Severity.WARN,
+                f"{name} spacing is irregular (most common step: {step})."))
+
+    pairs = np.unique(np.column_stack((il, xl)), axis=0)
+    holes = len(u_il) * len(u_xl) - len(pairs)
+    if holes > 0:
+        pct = 100 * holes / (len(u_il) * len(u_xl))
+        findings.append(Finding(
+            "G-01", Severity.WARN,
+            f"{holes} grid position(s) ({pct:.2f}%) have no trace within the present "
+            f"inline/crossline range. Survey outlines can be non-rectangular, so this "
+            f"may be legitimate."))
+
+    if not findings:
+        findings.append(Finding(
+            "G-01", Severity.INFO,
+            f"Complete grid: {len(u_il)} inlines x {len(u_xl)} crosslines "
+            f"({len(pairs)} positions)."))
+    return findings
