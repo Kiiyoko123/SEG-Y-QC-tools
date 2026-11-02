@@ -460,3 +460,65 @@ def check_g04(path):
                         f"Header X/Y deviate from the inline/crossline fit: {detail}.")]
     return [Finding("G-04", Severity.INFO,
                     f"Header X/Y consistent with inline/crossline: {detail}.")]
+
+T01_DEAD_RMS = 1e-8
+T01_FAIL_FRACTION = 0.10
+T01_CHUNK_BYTES = 64_000_000  # batas memori per potongan data
+
+
+def _scan_dead_traces(path, dead_rms):
+    """Baca trace per potongan. Return (n_trace, jumlah dead, jumlah constant,
+    indeks dead pertama, indeks constant pertama)."""
+    n_dead = n_const = 0
+    first_dead, first_const = [], []
+    with segyio.open(path, "r", ignore_geometry=True) as f:
+        n = f.tracecount
+        ns = len(f.samples)
+        if n == 0 or ns <= 0:
+            return n, 0, 0, [], []
+        step = max(1, T01_CHUNK_BYTES // (ns * 8))
+        for start in range(0, n, step):
+            stop = min(start + step, n)
+            block = np.asarray(f.trace.raw[start:stop], dtype=np.float64)
+            with np.errstate(invalid="ignore"):
+                rms = np.sqrt(np.mean(block ** 2, axis=1))
+                is_const = block.max(axis=1) == block.min(axis=1)
+            is_dead = rms <= dead_rms
+            only_const = is_const & ~is_dead
+            n_dead += int(is_dead.sum())
+            n_const += int(only_const.sum())
+            if len(first_dead) < 5:
+                first_dead += (start + np.flatnonzero(is_dead)).tolist()[:5]
+            if len(first_const) < 5:
+                first_const += (start + np.flatnonzero(only_const)).tolist()[:5]
+    return n, n_dead, n_const, first_dead[:5], first_const[:5]
+
+
+def check_t01(path, dead_rms=T01_DEAD_RMS):
+    """T-01: trace mati (RMS ~ 0) atau konstan."""
+    try:
+        n, n_dead, n_const, first_dead, first_const = _scan_dead_traces(path, dead_rms)
+    except Exception as exc:
+        return [Finding("T-01", Severity.FAIL,
+                        f"segyio could not read trace data: {exc}")]
+    if n == 0:
+        return [Finding("T-01", Severity.FAIL, "File contains no traces.")]
+
+    flagged = n_dead + n_const
+    if flagged == 0:
+        return [Finding("T-01", Severity.INFO,
+                        f"No dead or constant traces among {n} traces.")]
+
+    severity = Severity.FAIL if flagged / n >= T01_FAIL_FRACTION else Severity.WARN
+    findings = []
+    if n_dead:
+        findings.append(Finding(
+            "T-01", severity,
+            f"{n_dead} trace(s) are dead (RMS <= {dead_rms:g}) out of {n} "
+            f"({100 * n_dead / n:.2f}%). First indices: {first_dead}."))
+    if n_const:
+        findings.append(Finding(
+            "T-01", severity,
+            f"{n_const} trace(s) are constant non-zero out of {n} "
+            f"({100 * n_const / n:.2f}%). First indices: {first_const}."))
+    return findings
