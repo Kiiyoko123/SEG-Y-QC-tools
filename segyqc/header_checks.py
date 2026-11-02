@@ -578,3 +578,60 @@ def check_t02(path):
         "T-02", Severity.FAIL,
         f"{n_nan} NaN and {n_inf} Inf sample(s) found in {n_bad} of {n} trace(s) "
         f"({100 * n_bad / n:.2f}%). First affected trace indices: {first_bad}.")]
+
+T03_CLIP_FRACTION = 0.001
+T03_FAIL_FRACTION = 0.10
+
+
+def _scan_clipping(path, clip_fraction):
+    """Baca trace per potongan. Return (n_trace, n_clipped, indeks pertama,
+    fraksi tertinggi)."""
+    n_clipped = 0
+    first = []
+    worst = 0.0
+    with segyio.open(path, "r", ignore_geometry=True) as f:
+        n = f.tracecount
+        ns = len(f.samples)
+        if n == 0 or ns <= 0:
+            return n, 0, [], 0.0
+        step = max(1, T01_CHUNK_BYTES // (ns * 8))
+        for start in range(0, n, step):
+            stop = min(start + step, n)
+            block = np.asarray(f.trace.raw[start:stop], dtype=np.float64)
+            finite = np.isfinite(block).all(axis=1)
+            with np.errstate(invalid="ignore"):
+                hi = block.max(axis=1, keepdims=True)
+                lo = block.min(axis=1, keepdims=True)
+                n_hi = (block == hi).sum(axis=1)
+                n_lo = (block == lo).sum(axis=1)
+                not_const = hi[:, 0] != lo[:, 0]
+            worst_side = np.maximum(n_hi, n_lo)
+            frac = worst_side / ns
+            clipped = finite & not_const & (worst_side >= 2) & (frac > clip_fraction)
+            n_clipped += int(clipped.sum())
+            if clipped.any():
+                worst = max(worst, float(frac[clipped].max()))
+            if len(first) < 5:
+                first += (start + np.flatnonzero(clipped)).tolist()[:5]
+    return n, n_clipped, first[:5], worst
+
+def check_t03(path, clip_fraction=T03_CLIP_FRACTION):
+    """T-03: amplitude clipping (banyak sampel menempel di max/min trace)."""
+    try:
+        n, n_clipped, first, worst = _scan_clipping(path, clip_fraction)
+    except Exception as exc:
+        return [Finding("T-03", Severity.FAIL,
+                        f"segyio could not read trace data: {exc}")]
+    if n == 0:
+        return [Finding("T-03", Severity.FAIL, "File contains no traces.")]
+
+    if n_clipped == 0:
+        return [Finding("T-03", Severity.INFO,
+                        f"No clipped traces among {n} traces.")]
+
+    severity = Severity.FAIL if n_clipped / n >= T03_FAIL_FRACTION else Severity.WARN
+    return [Finding(
+        "T-03", severity,
+        f"{n_clipped} of {n} trace(s) ({100 * n_clipped / n:.2f}%) have more than "
+        f"{clip_fraction:.2%} of samples at their own max/min value (worst: "
+        f"{worst:.1%}). First indices: {first}.")]

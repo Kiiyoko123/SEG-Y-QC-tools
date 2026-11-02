@@ -37,7 +37,7 @@ Every check has an ID, a severity (`INFO` / `WARN` / `FAIL`), and configurable t
 | G-04 | Header X/Y consistent with inline/crossline (affine fit residual) | ✅ |
 | T-01 | Dead / constant traces | ✅ |
 | T-02 | NaN / Inf samples | ✅ |
-| T-03 | Amplitude clipping | 🔲 |
+| T-03 | Amplitude clipping | ✅ |
 | T-04 | Trace RMS outliers (robust z-score, MAD-based) | 🔲 |
 | T-05 | Average amplitude spectrum, dominant frequency vs. Nyquist | 🔲 |
 
