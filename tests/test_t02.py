@@ -68,3 +68,37 @@ def test_t02_too_short(tmp_path):
     p = tmp_path / "e.sgy"
     p.write_bytes(b"abc")
     assert check_t02(p)[0].severity == Severity.FAIL
+
+def make_raw(path, raw_samples, fmt):
+    """File dengan byte sampel mentah (4 byte per sampel), untuk uji format."""
+    ns = len(raw_samples) // 4
+    out = bytearray(3600)
+    out[3216:3218] = struct.pack(">h", 4000)
+    out[3220:3222] = struct.pack(">h", ns)
+    out[3224:3226] = struct.pack(">h", fmt)
+    th = bytearray(240)
+    th[114:116] = struct.pack(">h", ns)
+    th[116:118] = struct.pack(">h", 4000)
+    out += th + raw_samples
+    path.write_bytes(bytes(out))
+
+
+def test_t02_ibm_out_of_range_detected(tmp_path):
+    p = tmp_path / "ibm.sgy"
+    make_raw(p, bytes.fromhex("7FFFFFFF") + bytes.fromhex("41100000") * 3, fmt=1)
+    r = check_t02(p)
+    assert r[0].severity == Severity.FAIL and "1 NaN" in r[0].message
+
+
+def test_t02_integer_format_not_applicable(tmp_path):
+    p = tmp_path / "int.sgy"
+    make_raw(p, bytes(16), fmt=2)
+    r = check_t02(p)
+    assert r[0].severity == Severity.INFO and "Not applicable" in r[0].message
+
+
+def test_t02_invalid_format_skipped(tmp_path):
+    p = tmp_path / "bad.sgy"
+    make_raw(p, bytes(16), fmt=99)
+    r = check_t02(p)
+    assert r[0].severity == Severity.WARN and "Skipped" in r[0].message

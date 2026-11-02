@@ -550,6 +550,18 @@ def _scan_nonfinite(path):
 
 def check_t02(path):
     """T-02: sampel NaN / Inf."""
+    hdr = read_binary_header(path)
+    if hdr is not None:
+        fmt = hdr["format"]
+        if fmt not in VALID_FORMAT_CODES:
+            return [Finding("T-02", Severity.WARN,
+                            f"Skipped: invalid format code {fmt}, samples cannot be "
+                            f"interpreted (see H-02).")]
+        if fmt in (2, 3, 8):
+            return [Finding("T-02", Severity.INFO,
+                            f"Not applicable: format code {fmt} is an integer format, "
+                            f"which cannot hold NaN or Inf.")]
+
     try:
         n, n_nan, n_inf, n_bad, first_bad = _scan_nonfinite(path)
     except Exception as exc:
