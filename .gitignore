@@ -3,3 +3,4 @@ __pycache__/
 *.sgy
 *.segy
 data/
+*.egg-info/

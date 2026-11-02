@@ -44,9 +44,9 @@ Every check has an ID, a severity (`INFO` / `WARN` / `FAIL`), and configurable t
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/segyqc.git
-cd segyqc
-pip install -e .
+  git clone https://github.com/Kiiyoko123/SEG-Y-QC-tools.git
+  cd SEG-Y-QC-tools
+  pip install -e .
 ```
 
 Requires Python ≥ 3.9. Core dependencies: `numpy`, `segyio`, `matplotlib`, `pyyaml`.

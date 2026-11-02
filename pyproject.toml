@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "segyqc"
+version = "0.1.0"
+description = "Automated QC for post-stack 3D SEG-Y files"
+requires-python = ">=3.9"
+dependencies = ["numpy", "segyio", "matplotlib", "pyyaml"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["segyqc"]
