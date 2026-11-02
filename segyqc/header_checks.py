@@ -301,3 +301,33 @@ def check_g01(path):
             f"Complete grid: {len(u_il)} inlines x {len(u_xl)} crosslines "
             f"({len(pairs)} positions)."))
     return findings
+
+def check_g02(path):
+    """G-02: posisi (inline, crossline) duplikat."""
+    try:
+        il, xl = read_line_arrays(path)
+    except Exception as exc:
+        return [Finding("G-02", Severity.FAIL,
+                        f"segyio could not read trace headers: {exc}")]
+    if len(il) == 0:
+        return [Finding("G-02", Severity.FAIL, "File contains no traces.")]
+
+    if np.all(il == 0) or np.all(xl == 0):
+        return [Finding("G-02", Severity.FAIL,
+                        "Inline or crossline is 0 in every trace; duplicate check "
+                        "is meaningless (unset values or wrong byte location).")]
+
+    pairs, counts = np.unique(np.column_stack((il, xl)), axis=0, return_counts=True)
+    dup = counts > 1
+    n_pos = int(dup.sum())
+    if n_pos == 0:
+        return [Finding("G-02", Severity.INFO,
+                        f"No duplicate positions across {len(il)} traces.")]
+
+    extra = int((counts[dup] - 1).sum())
+    examples = ", ".join(
+        f"({int(a)}, {int(b)}) x{int(c)}"
+        for (a, b), c in list(zip(pairs[dup], counts[dup]))[:5])
+    return [Finding("G-02", Severity.FAIL,
+                    f"{n_pos} position(s) have more than one trace ({extra} extra "
+                    f"trace(s) in total). Examples: {examples}.")]
