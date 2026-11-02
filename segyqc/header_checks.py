@@ -635,3 +635,74 @@ def check_t03(path, clip_fraction=T03_CLIP_FRACTION):
         f"{n_clipped} of {n} trace(s) ({100 * n_clipped / n:.2f}%) have more than "
         f"{clip_fraction:.2%} of samples at their own max/min value (worst: "
         f"{worst:.1%}). First indices: {first}.")]
+
+T04_MAD_THRESHOLD = 6.0
+T04_MIN_TRACES = 10
+
+
+def _trace_rms(path):
+    """RMS tiap trace, dibaca per potongan. Array panjang n_trace."""
+    with segyio.open(path, "r", ignore_geometry=True) as f:
+        n = f.tracecount
+        ns = len(f.samples)
+        if n == 0 or ns <= 0:
+            return np.array([])
+        out = np.empty(n, dtype=np.float64)
+        step = max(1, T01_CHUNK_BYTES // (ns * 8))
+        for start in range(0, n, step):
+            stop = min(start + step, n)
+            block = np.asarray(f.trace.raw[start:stop], dtype=np.float64)
+            with np.errstate(invalid="ignore", over="ignore"):
+                out[start:stop] = np.sqrt(np.mean(block ** 2, axis=1))
+    return out
+
+
+def check_t04(path, mad_threshold=T04_MAD_THRESHOLD, dead_rms=T01_DEAD_RMS):
+    """T-04: outlier RMS antar trace (robust z-score berbasis MAD)."""
+    try:
+        rms = _trace_rms(path)
+    except Exception as exc:
+        return [Finding("T-04", Severity.FAIL,
+                        f"segyio could not read trace data: {exc}")]
+    if len(rms) == 0:
+        return [Finding("T-04", Severity.FAIL, "File contains no traces.")]
+
+    usable = np.isfinite(rms) & (rms > dead_rms)
+    n_use = int(usable.sum())
+    n_excl = len(rms) - n_use
+    note = (f" ({n_excl} dead or non-finite trace(s) excluded; see T-01/T-02)"
+            if n_excl else "")
+    if n_use < T04_MIN_TRACES:
+        return [Finding("T-04", Severity.WARN,
+                        f"Skipped: only {n_use} usable trace(s), at least "
+                        f"{T04_MIN_TRACES} are needed for robust statistics.{note}")]
+
+    vals = rms[usable]
+    med = float(np.median(vals))
+    mad = float(np.median(np.abs(vals - med))) * 1.4826  # skala setara std
+
+    if mad == 0:
+        if np.all(vals == med):
+            return [Finding("T-04", Severity.INFO,
+                            f"RMS is identical across all {n_use} usable traces.{note}")]
+        return [Finding("T-04", Severity.WARN,
+                        "RMS is identical in more than half of the traces, so the "
+                        "robust z-score cannot be computed (MAD = 0)." + note)]
+
+    z = (vals - med) / mad
+    flagged = np.abs(z) > mad_threshold
+    if not flagged.any():
+        return [Finding("T-04", Severity.INFO,
+                        f"No RMS outliers among {n_use} traces (median RMS {med:.4g}, "
+                        f"max |z| {np.abs(z).max():.1f}, threshold {mad_threshold:g})."
+                        + note)]
+
+    idx = np.flatnonzero(usable)[flagged]
+    n_high = int((z[flagged] > 0).sum())
+    n_low = int((z[flagged] < 0).sum())
+    return [Finding(
+        "T-04", Severity.WARN,
+        f"{len(idx)} of {n_use} trace(s) are RMS outliers (|z| > {mad_threshold:g}): "
+        f"{n_high} high, {n_low} low. Median RMS {med:.4g}, worst |z| "
+        f"{np.abs(z).max():.1f}. First indices: {idx[:5].tolist()}. May be geology or "
+        f"acquisition/processing artifacts." + note)]
