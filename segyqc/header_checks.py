@@ -1,5 +1,9 @@
 import struct
 
+import numpy as np
+import segyio
+from segyio import TraceField
+
 from .models import Finding, Severity
 
 TEXT_HEADER_SIZE = 3200
@@ -66,4 +70,53 @@ def check_h02(path):
 
     if not findings:
         findings.append(Finding("H-02", Severity.INFO, "Binary header fields are valid."))
+    return findings
+
+def read_trace_header_arrays(path):
+    """Baca sample count dan interval dari SEMUA trace header (hanya header)."""
+    with segyio.open(path, "r", ignore_geometry=True) as f:
+        return {
+            "samples": np.asarray(f.attributes(TraceField.TRACE_SAMPLE_COUNT)[:]),
+            "interval": np.asarray(f.attributes(TraceField.TRACE_SAMPLE_INTERVAL)[:]),
+        }
+
+
+def _load(path):
+    """Return (binary_header, trace_arrays, error_message). Salah satunya None."""
+    hdr = read_binary_header(path)
+    if hdr is None:
+        return None, None, "File too short for a binary header."
+    try:
+        arrays = read_trace_header_arrays(path)
+    except Exception as exc:
+        return None, None, f"segyio could not read trace headers: {exc}"
+    if len(arrays["samples"]) == 0:
+        return None, None, "File contains no traces."
+    return hdr, arrays, None
+
+
+def check_h03(path):
+    """H-03: binary header sample count/interval sama dengan trace header."""
+    hdr, arrays, err = _load(path)
+    if err:
+        return [Finding("H-03", Severity.FAIL, err)]
+
+    findings = []
+    bad_n = np.flatnonzero(arrays["samples"] != hdr["samples"])
+    if len(bad_n):
+        findings.append(Finding(
+            "H-03", Severity.FAIL,
+            f"{len(bad_n)} trace(s) have a sample count different from the binary "
+            f"header ({hdr['samples']}). First indices: {bad_n[:5].tolist()}."))
+
+    bad_dt = np.flatnonzero(arrays["interval"] != hdr["interval"])
+    if len(bad_dt):
+        findings.append(Finding(
+            "H-03", Severity.WARN,
+            f"{len(bad_dt)} trace(s) have a sample interval different from the binary "
+            f"header ({hdr['interval']}). First indices: {bad_dt[:5].tolist()}."))
+
+    if not findings:
+        findings.append(Finding("H-03", Severity.INFO,
+                                "Binary and trace headers agree on samples and interval."))
     return findings
