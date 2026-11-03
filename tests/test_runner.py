@@ -72,9 +72,9 @@ def test_missing_file_raises(tmp_path):
         run_qc(tmp_path / "nope.sgy")
 
 
-def test_config_not_supported_yet(tmp_path):
-    with pytest.raises(NotImplementedError):
-        run_qc(dummy_file(tmp_path), config="qc.yaml")
+def test_missing_config_file_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        run_qc(dummy_file(tmp_path), config=tmp_path / "nope.yaml")
 
 
 def test_to_json_roundtrip(tmp_path, monkeypatch):
