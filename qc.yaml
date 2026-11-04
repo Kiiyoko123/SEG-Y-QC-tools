@@ -1,10 +1,12 @@
 # qc.yaml: pengaturan segyqc (nilai di bawah = nilai bawaan)
 
-byte_locations:        # belum bisa diubah, hanya nilai bawaan yang jalan
+byte_locations:        # byte AWAL (mulai dari 1) tiap field di trace header
   inline: 189
   crossline: 193
   cdp_x: 181
   cdp_y: 185
+# Contoh layout Teapot Dome (menurut dokumentasi MDIO; selalu cek header teks file-mu):
+#   inline: 181, crossline: 185, cdp_x: 189, cdp_y: 193
 
 thresholds:
   dead_trace_rms: 1.0e-8   # RMS <= ini = trace mati (T-01, juga dikecualikan di T-04)

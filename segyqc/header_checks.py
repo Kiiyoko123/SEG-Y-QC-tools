@@ -230,12 +230,12 @@ def check_h04(path):
             f"{walk['trailing']} trailing byte(s) after the last complete trace."))
     return findings
 
-def read_line_arrays(path):
+def read_line_arrays(path, inline=189, crossline=193):
     """Baca inline (byte 189) dan crossline (byte 193) dari semua trace header."""
     with segyio.open(path, "r", ignore_geometry=True) as f:
         return (
-            np.asarray(f.attributes(TraceField.INLINE_3D)[:], dtype=np.int64),
-            np.asarray(f.attributes(TraceField.CROSSLINE_3D)[:], dtype=np.int64),
+            np.asarray(f.attributes(inline)[:], dtype=np.int64),
+            np.asarray(f.attributes(crossline)[:], dtype=np.int64),
         )
 
 
@@ -252,10 +252,10 @@ def _line_gaps(values):
     return u, step, np.setdiff1d(expected, u), irregular
 
 
-def check_g01(path):
+def check_g01(path, inline=189, crossline=193):
     """G-01: kelengkapan grid inline/crossline (gap, line hilang)."""
     try:
-        il, xl = read_line_arrays(path)
+        il, xl = read_line_arrays(path, inline, crossline)
     except Exception as exc:
         return [Finding("G-01", Severity.FAIL,
                         f"segyio could not read trace headers: {exc}")]
@@ -302,10 +302,10 @@ def check_g01(path):
             f"({len(pairs)} positions)."))
     return findings
 
-def check_g02(path):
+def check_g02(path, inline=189, crossline=193):
     """G-02: posisi (inline, crossline) duplikat."""
     try:
-        il, xl = read_line_arrays(path)
+        il, xl = read_line_arrays(path, inline, crossline)
     except Exception as exc:
         return [Finding("G-02", Severity.FAIL,
                         f"segyio could not read trace headers: {exc}")]
@@ -383,12 +383,12 @@ G04_WARN_FRACTION = 0.1   # simpangan > 10% ukuran sel -> WARN
 G04_FAIL_FRACTION = 0.5   # simpangan > 50% ukuran sel -> FAIL
 
 
-def read_coordinate_arrays(path):
+def read_coordinate_arrays(path, cdp_x=181, cdp_y=185):
     """Baca CDP_X (byte 181), CDP_Y (byte 185), dan scalar (byte 71)."""
     with segyio.open(path, "r", ignore_geometry=True) as f:
         return (
-            np.asarray(f.attributes(TraceField.CDP_X)[:], dtype=np.float64),
-            np.asarray(f.attributes(TraceField.CDP_Y)[:], dtype=np.float64),
+            np.asarray(f.attributes(cdp_x)[:], dtype=np.float64),
+            np.asarray(f.attributes(cdp_y)[:], dtype=np.float64),
             np.asarray(f.attributes(TraceField.SourceGroupScalar)[:], dtype=np.float64),
         )
 
@@ -400,11 +400,11 @@ def _apply_scalar(values, scalars):
     return values * factor
 
 
-def check_g04(path):
+def check_g04(path, inline=189, crossline=193, cdp_x=181, cdp_y=185):
     """G-04: X/Y header konsisten dengan inline/crossline (residual affine fit)."""
     try:
-        il, xl = read_line_arrays(path)
-        x, y, scalars = read_coordinate_arrays(path)
+        il, xl = read_line_arrays(path, inline, crossline)
+        x, y, scalars = read_coordinate_arrays(path, cdp_x, cdp_y)
     except Exception as exc:
         return [Finding("G-04", Severity.FAIL,
                         f"segyio could not read trace headers: {exc}")]

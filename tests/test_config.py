@@ -98,10 +98,30 @@ def test_run_qc_passes_thresholds_to_checks(tmp_path, monkeypatch):
     assert seen["H-02"] == {}
 
 
-def test_custom_byte_locations_not_supported_yet(tmp_path):
-    cfg = write(tmp_path, "byte_locations:\n  inline: 9\n")
-    with pytest.raises(NotImplementedError):
-        run_qc(dummy_file(tmp_path), config=cfg)
+def test_run_qc_passes_byte_locations_to_checks(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake(name):
+        def check(path, **kwargs):
+            seen[name] = kwargs
+            return [Finding(name, Severity.INFO, "ok")]
+        return check
+
+    monkeypatch.setattr(runner, "CHECKS", [
+        ("G-01", fake("G-01")), ("G-02", fake("G-02")), ("G-04", fake("G-04")),
+        ("H-02", fake("H-02"))])
+    cfg = write(tmp_path, "byte_locations:\n  inline: 181\n  crossline: 185\n"
+                          "  cdp_x: 189\n  cdp_y: 193\n")
+    run_qc(dummy_file(tmp_path), config=cfg)
+    assert seen["G-01"] == {"inline": 181, "crossline": 185}
+    assert seen["G-02"] == {"inline": 181, "crossline": 185}
+    assert seen["G-04"] == {"inline": 181, "crossline": 185, "cdp_x": 189, "cdp_y": 193}
+    assert seen["H-02"] == {}
+
+
+def test_byte_location_must_be_a_field_start(tmp_path):
+    with pytest.raises(ConfigError, match="first byte"):
+        load_config(write(tmp_path, "byte_locations:\n  inline: 10\n"))
 
 
 def test_explicit_default_byte_locations_accepted(tmp_path, monkeypatch):

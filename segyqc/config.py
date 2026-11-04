@@ -1,8 +1,13 @@
 import os
 
 import yaml
+from segyio import TraceField
 
 DEFAULT_BYTE_LOCATIONS = {"inline": 189, "crossline": 193, "cdp_x": 181, "cdp_y": 185}
+# Hanya byte yang merupakan AWAL sebuah field header yang bisa dibaca segyio.
+VALID_BYTES = frozenset(
+    v for k, v in vars(TraceField).items()
+    if not k.startswith("_") and isinstance(v, int))
 DEFAULT_THRESHOLDS = {
     "dead_trace_rms": 1e-8,
     "rms_outlier_mad": 6.0,
@@ -53,8 +58,11 @@ def load_config(path=None):
         if key not in DEFAULT_BYTE_LOCATIONS:
             raise ConfigError(f"Unknown byte_locations key {key!r}. "
                               f"Allowed: {sorted(DEFAULT_BYTE_LOCATIONS)}.")
-        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 237:
-            raise ConfigError(f"byte_locations.{key} must be an integer 1-237, "
+        valid = (isinstance(value, int) and not isinstance(value, bool)
+                 and value in VALID_BYTES)
+        if not valid:
+            raise ConfigError(f"byte_locations.{key} must be the first byte of a "
+                              f"standard trace header field (e.g. 9, 21, 73, 181, 189), "
                               f"got {value!r}.")
         cfg["byte_locations"][key] = value
 
